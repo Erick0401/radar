@@ -211,6 +211,7 @@
     if (!st.mapa) {
       st.mapa = crearMapa('mapa');
       st.mapa.fitBounds(TABASCO);
+      setTimeout(() => encuadrar(false), 120);
       st.mapa.createPane('zonas').style.zIndex = 350;
       st.mapa.createPane('etiquetas').style.zIndex = 450;
       st.mapa.getPane('etiquetas').style.pointerEvents = 'none';
@@ -404,6 +405,14 @@
     return Math.round(2 * R * Math.asin(Math.sqrt(h)));
   }
 
+  // En computadora el panel flota sobre el mapa: se recorre el encuadre para que no tape Tabasco
+  function encuadrar(animado) {
+    const lado = innerWidth >= 900 && st.modo !== 'alertas' ? 360 : 0;
+    const op = { paddingTopLeft: [lado, 0], paddingBottomRight: [0, 0] };
+    const zona = st.modo === 'sismos' ? SURESTE : TABASCO;
+    if (animado) st.mapa.flyToBounds(zona, Object.assign(op, { duration: 0.6 })); else st.mapa.fitBounds(zona, op);
+  }
+
   function marcarModo() {
     document.querySelectorAll('[data-modo]').forEach(b => {
       const on = b.dataset.modo === st.modo;
@@ -417,7 +426,7 @@
     st.modo = b.dataset.modo; guardar('radar_modo', st.modo);
     if (st.modo !== 'iconos') st.grupo = 'todos';
     marcarModo();
-    if (veniaDeSismos) { st.mapa._sismosVista = false; st.mapa.flyToBounds(TABASCO, { duration: 0.6 }); }
+    if (veniaDeSismos || st.modo === 'sismos' || innerWidth >= 900) encuadrar(true);
     pintarPanel(); pintarModo();
   }));
 
@@ -587,8 +596,6 @@
     if (!st.sismos) info.innerHTML = '<div class="cargando">Consultando sismos…</div>';
     const [lista, geo] = await Promise.all([datosSismos(), geoMunicipios().catch(() => null)]); if (!vigente()) return;
     if (geo) L.geoJSON(geo, { pane: 'zonas', interactive: false, style: { color: '#7FB3FF', weight: 1, opacity: 0.55, fillColor: '#7FB3FF', fillOpacity: 0.06 } }).addTo(st.capaModo);
-    if (!st.mapa._sismosVista) { st.mapa.flyToBounds(SURESTE, { duration: 0.6 }); }
-    st.mapa._sismosVista = true;
     // círculos de mayor a menor para que los chicos queden encima
     lista.slice().sort((a, b) => b.mag - a.mag).forEach(s => {
       const c = colorSismo(s.t), reciente = Date.now() - s.t < 86400000;

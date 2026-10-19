@@ -63,20 +63,25 @@
       </header>
 
       <div class="cuerpo-mapa">
+        <div class="modos" role="tablist" aria-label="Modo del mapa">
+          <button role="tab" data-modo="alertas"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Alertas</button>
+          <button role="tab" data-modo="iconos"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Íconos</button>
+          <button role="tab" data-modo="riesgo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>Riesgo</button>
+          <button role="tab" data-modo="sismos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l2-6 3 12 3-9 2 3h6"/></svg>Sismos</button>
+          <button role="tab" data-modo="clima"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Clima</button>
+        </div>
+
         <div class="mapa-caja">
           <div id="mapa"></div>
           <div class="capas">
             <button id="btn-lluvia" class="chip-capa" aria-pressed="false">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 16.6A5 5 0 0 0 18 7h-1.3A8 8 0 1 0 4 15.3"/><path d="M8 19v2M12 17v4M16 19v2"/></svg>Lluvia
-            </button>
-            <button id="btn-termo" class="chip-capa" aria-pressed="false">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/></svg>Termómetro
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 16.6A5 5 0 0 0 18 7h-1.3A8 8 0 1 0 4 15.3"/><path d="M8 19v2M12 17v4M16 19v2"/></svg>Radar de lluvia
             </button>
           </div>
-          <div class="leyenda">
-            <span><i class="dot rojo"></i>Urgente</span><span><i class="dot naranja"></i>Atención</span><span><i class="dot amarillo"></i>Seguimiento</span>
-          </div>
+          <div id="leyenda" class="leyenda"></div>
         </div>
+
+        <div id="modo-info" class="modo-info" hidden></div>
 
         <div class="lista-caja">
           <div class="fila lista-cab">
@@ -94,6 +99,7 @@
             <button class="chip activo" data-filtro="todas">Todas</button>
             <button class="chip" data-filtro="urgentes">Solo urgentes</button>
             <select id="filtro-cat" class="chip" aria-label="Categoría"><option value="">Categoría</option></select>
+            <button id="chip-muni" class="chip activo" hidden></button>
             <button id="btn-hoy" class="chip" hidden>Volver a hoy</button>
           </div>
           <div id="lista" class="lista"></div>

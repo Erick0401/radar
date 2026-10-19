@@ -13,7 +13,9 @@
   const st = {
     clave: leer('radar_clave'), usuario: null, servidor: {},
     fecha: null, hoy: null, panel: null, filtro: 'todas', cat: '',
-    mapa: null, capaPines: null, capaLluvia: null, capaTermo: null,
+    mapa: null, capaPines: null, capaLluvia: null, capaModo: null, capaEtq: null,
+    modo: leer('radar_modo') || 'alertas', grupo: 'todos', muni: '', riesgoVista: 'hoy', climaVar: 'calor', climaDia: 0,
+    geo: null, sismos: null, clima: null, pintando: 0,
     timerPanel: null, timerDur: null, timerTv: null, timerReloj: null
   };
 
@@ -209,7 +211,13 @@
     if (!st.mapa) {
       st.mapa = crearMapa('mapa');
       st.mapa.fitBounds(TABASCO);
+      st.mapa.createPane('zonas').style.zIndex = 350;
+      st.mapa.createPane('etiquetas').style.zIndex = 450;
+      st.mapa.getPane('etiquetas').style.pointerEvents = 'none';
+      st.capaModo = L.layerGroup().addTo(st.mapa);
+      st.capaEtq = L.layerGroup().addTo(st.mapa);
       st.capaPines = L.layerGroup().addTo(st.mapa);
+      marcarModo();
       const sel = $('#filtro-cat');
       CATEGORIAS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
     }
@@ -225,7 +233,7 @@
       st.panel = j; st.hoy = j.hoy; st.servidor = Object.assign(st.servidor, j.config || {});
       pintarEstado(j.estado);
       pintarPanel();
-      if (st.capaTermo) pintarTermometro();
+      pintarModo();
     } catch (e) { if (!silencioso) toast('Sin conexión: ' + e.message); pintarEstado(null); }
   }
 
@@ -239,7 +247,8 @@
   }
 
   function filtrar(lista) {
-    return lista.filter(e => (st.filtro !== 'urgentes' || e.nivel !== 'amarillo') && (!st.cat || e.categoria === st.cat));
+    return lista.filter(e => (st.filtro !== 'urgentes' || e.nivel !== 'amarillo') && (!st.cat || e.categoria === st.cat) &&
+      (!st.muni || e.municipio === st.muni) && (st.modo !== 'iconos' || st.grupo === 'todos' || grupoDe(e.categoria) === st.grupo));
   }
 
   function pintarPanel() {
@@ -251,6 +260,7 @@
     $('#sub-dia').textContent = (esHoy ? fechaLarga(j.fecha) + ' · ' : '') + j.dia.length + ' alertas';
     $('#fecha').value = j.fecha; $('#fecha').max = j.hoy;
     $('#btn-hoy').hidden = esHoy;
+    const cm = $('#chip-muni'); cm.hidden = !st.muni; cm.textContent = st.muni ? st.muni + '  ✕' : '';
 
     // Pines: hoy = activos (laten los rojos); otro día = todo lo de ese día
     st.capaPines.clearLayers();
@@ -258,11 +268,17 @@
     enMapa.forEach(e => {
       if (!isFinite(e.lat) || !isFinite(e.lon)) return;
       const late = esHoy && e.nivel === 'rojo' && ['Nueva', 'En seguimiento'].indexOf(e.estatus) !== -1;
-      const tam = e.nivel === 'rojo' ? 18 : 14;
-      const ic = L.divIcon({ className: '', iconSize: [tam, tam], iconAnchor: [tam / 2, tam / 2],
-        html: '<div class="pin ' + e.nivel + (late ? ' late' : '') + (esHoy ? '' : ' apagado') + '" style="width:' + tam + 'px;height:' + tam + 'px"></div>' });
+      let ic;
+      if (st.modo === 'iconos') {
+        ic = L.divIcon({ className: '', iconSize: [32, 40], iconAnchor: [16, 39],
+          html: '<div class="ico-pin ' + e.nivel + (late ? ' late' : '') + (esHoy ? '' : ' apagado') + '">' + icono(e.categoria) + '</div>' });
+      } else {
+        const tam = st.modo === 'alertas' ? (e.nivel === 'rojo' ? 18 : 14) : (e.nivel === 'rojo' ? 14 : 10);
+        ic = L.divIcon({ className: '', iconSize: [tam, tam], iconAnchor: [tam / 2, tam / 2],
+          html: '<div class="pin ' + e.nivel + (late ? ' late' : '') + (esHoy ? '' : ' apagado') + '" style="width:' + tam + 'px;height:' + tam + 'px"></div>' });
+      }
       L.marker([e.lat, e.lon], { icon: ic, zIndexOffset: e.urgencia * 100, title: e.titulo })
-        .bindTooltip(esc(e.categoria + ' · ' + (e.municipio || '') + (e.aprox ? ' (aprox.)' : '')), { direction: 'top', offset: [0, -8] })
+        .bindTooltip(esc(e.categoria + ' · ' + (e.municipio || '') + (e.aprox ? ' (aprox.)' : '')), { direction: 'top', offset: [0, st.modo === 'iconos' ? -36 : -8] })
         .on('click', () => location.hash = '#/alerta/' + e.id)
         .addTo(st.capaPines);
     });
@@ -295,32 +311,16 @@
   document.querySelectorAll('[data-filtro]').forEach(b => b.addEventListener('click', () => {
     st.filtro = b.dataset.filtro;
     document.querySelectorAll('[data-filtro]').forEach(x => x.classList.toggle('activo', x === b));
-    pintarPanel();
+    pintarPanel(); if (st.modo === 'iconos') pintarModo();
   }));
-  $('#filtro-cat').addEventListener('change', e => { st.cat = e.target.value; e.target.classList.toggle('activo', !!st.cat); pintarPanel(); });
+  $('#filtro-cat').addEventListener('change', e => { st.cat = e.target.value; e.target.classList.toggle('activo', !!st.cat); pintarPanel(); if (st.modo === 'iconos') pintarModo(); });
   $('#fecha').addEventListener('change', e => { st.fecha = e.target.value || null; cargarPanel(); });
   $('#btn-hoy').addEventListener('click', () => { st.fecha = null; cargarPanel(); });
   $('#btn-refrescar').addEventListener('click', () => { cargarPanel(); toast('Actualizado'); });
   $('#btn-lluvia').addEventListener('click', e => alternarLluvia(st.mapa, e.currentTarget));
-  $('#btn-termo').addEventListener('click', e => {
-    const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
-    e.currentTarget.setAttribute('aria-pressed', String(on));
-    if (on) { st.capaTermo = L.layerGroup().addTo(st.mapa); pintarTermometro(); }
-    else if (st.capaTermo) { st.mapa.removeLayer(st.capaTermo); st.capaTermo = null; }
-  });
+  $('#chip-muni').addEventListener('click', () => { st.muni = ''; pintarPanel(); pintarModo(); });
 
   function colorTermo(r) { return r > 0.75 ? '#FF4D4F' : r > 0.5 ? '#FF7A45' : r > 0.25 ? '#FFA94D' : '#F5D04A'; }
-  function pintarTermometro() {
-    if (!st.capaTermo || !st.panel) return;
-    st.capaTermo.clearLayers();
-    const t = st.panel.termometro || [];
-    const max = Math.max.apply(null, t.map(x => x.peso).concat([1]));
-    t.forEach(x => {
-      const r = x.peso / max;
-      L.circleMarker([x.lat, x.lon], { radius: 10 + r * 26, color: colorTermo(r), weight: 1, fillColor: colorTermo(r), fillOpacity: 0.28 })
-        .bindTooltip(esc(x.municipio + ': ' + x.n + ' alertas en 7 días'), { direction: 'top' }).addTo(st.capaTermo);
-    });
-  }
 
   async function alternarLluvia(mapa, boton) {
     const on = boton.getAttribute('aria-pressed') !== 'true';
@@ -348,6 +348,330 @@
     };
     await poner();
     mapa._lluviaT = setInterval(poner, 10 * 60000);
+  }
+
+  // ---------------- MODOS DEL MAPA ----------------
+  // Cabeceras municipales (para clima y etiquetas)
+  const MUNIS = {
+    'Balancán': [17.8072, -91.5378], 'Cárdenas': [18.0011, -93.3758], 'Centla': [18.5306, -92.6386],
+    'Centro': [17.9892, -92.9281], 'Comalcalco': [18.2633, -93.2236], 'Cunduacán': [18.0656, -93.1739],
+    'Emiliano Zapata': [17.7406, -91.7664], 'Huimanguillo': [17.8331, -93.3892], 'Jalapa': [17.7217, -92.8125],
+    'Jalpa de Méndez': [18.1767, -93.0628], 'Jonuta': [18.0897, -92.1381], 'Macuspana': [17.7603, -92.5975],
+    'Nacajuca': [18.1692, -93.0172], 'Paraíso': [18.3967, -93.2128], 'Tacotalpa': [17.5953, -92.8250],
+    'Teapa': [17.5486, -92.9525], 'Tenosique': [17.4747, -91.4228]
+  };
+  // Punto de la etiqueta cuando la cabecera queda en la orilla del municipio
+  const ETQ = {
+    'Jonuta': [18.08, -92.14], 'Nacajuca': [18.14, -92.93], 'Teapa': [17.64, -92.96], 'Tacotalpa': [17.50, -92.73],
+    'Paraíso': [18.43, -93.20], 'Balancán': [17.81, -91.31], 'Centro': [17.93, -92.82], 'Comalcalco': [18.30, -93.37],
+    'Cunduacán': [18.02, -93.24], 'Macuspana': [17.85, -92.46], 'Tenosique': [17.43, -91.29], 'Emiliano Zapata': [17.71, -91.68],
+    'Huimanguillo': [17.75, -93.70], 'Cárdenas': [18.17, -93.65], 'Jalapa': [17.76, -92.78], 'Centla': [18.36, -92.59],
+    'Jalpa de Méndez': [18.26, -93.08] };
+  const VHSA = MUNIS['Centro'];
+  const SURESTE = [[14.3, -98.2], [21.6, -86.8]];
+
+  const GRUPOS = [
+    { id: 'todos', txt: 'Todos' },
+    { id: 'incidentes', txt: 'Incidentes', cats: ['Accidente', 'Incendio o fuga', 'Inundación y clima', 'Apagones / CFE', 'Agua', 'Seguridad', 'Afectación vial'] },
+    { id: 'movilizaciones', txt: 'Movilizaciones', cats: ['Bloqueo', 'Manifestación', 'Paro o toma'] },
+    { id: 'politico', txt: 'Político y avisos', cats: ['Político / oposición', 'Programas Bienestar', 'Otro'] }
+  ];
+  function grupoDe(cat) { const g = GRUPOS.find(x => x.cats && x.cats.indexOf(cat) !== -1); return g ? g.id : 'politico'; }
+
+  // Escalas de color
+  const ESC_RIESGO = [
+    { min: 1, c: '#F5D04A', t: 'Bajo' }, { min: 3, c: '#FFA94D', t: 'Medio' },
+    { min: 6, c: '#FF6B3D', t: 'Alto' }, { min: 10, c: '#E5243B', t: 'Muy alto' }];
+  const ESC_RIESGO_7D = [
+    { min: 1, c: '#F5D04A', t: 'Bajo' }, { min: 10, c: '#FFA94D', t: 'Medio' },
+    { min: 25, c: '#FF6B3D', t: 'Alto' }, { min: 50, c: '#E5243B', t: 'Muy alto' }];
+  const ESC_CALOR = [
+    { min: -99, c: '#4FB38A', t: '< 32°' }, { min: 32, c: '#F5D04A', t: '32–35°' }, { min: 35, c: '#FFA94D', t: '35–38°' },
+    { min: 38, c: '#FF6B3D', t: '38–41°' }, { min: 41, c: '#C81E3A', t: '41°+' }];
+  const ESC_LLUVIA = [
+    { min: 1, c: '#9CC9FF', t: '1–10 mm' }, { min: 10, c: '#5B9BFF', t: '10–30' },
+    { min: 30, c: '#2F6BFF', t: '30–70' }, { min: 70, c: '#7B3FF2', t: '70+ mm' }];
+  function colorDe(esc, v) { let c = null; esc.forEach(x => { if (v >= x.min) c = x; }); return c; }
+
+  function leyendaEscala(escala, extra) {
+    return (extra || '') + escala.map(x => '<span><i class="dot" style="background:' + x.c + '"></i>' + esc(x.t) + '</span>').join('');
+  }
+
+  function km(a, b) {
+    const R = 6371, r = Math.PI / 180;
+    const dLa = (b[0] - a[0]) * r, dLo = (b[1] - a[1]) * r;
+    const h = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLo / 2) ** 2;
+    return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+  }
+
+  function marcarModo() {
+    document.querySelectorAll('[data-modo]').forEach(b => {
+      const on = b.dataset.modo === st.modo;
+      b.classList.toggle('activo', on); b.setAttribute('aria-selected', String(on));
+    });
+  }
+
+  document.querySelectorAll('[data-modo]').forEach(b => b.addEventListener('click', () => {
+    if (st.modo === b.dataset.modo) return;
+    const veniaDeSismos = st.modo === 'sismos';
+    st.modo = b.dataset.modo; guardar('radar_modo', st.modo);
+    if (st.modo !== 'iconos') st.grupo = 'todos';
+    marcarModo();
+    if (veniaDeSismos) { st.mapa._sismosVista = false; st.mapa.flyToBounds(TABASCO, { duration: 0.6 }); }
+    pintarPanel(); pintarModo();
+  }));
+
+  // Pinta la capa y el panel del modo actual
+  async function pintarModo() {
+    if (!st.mapa) return;
+    const turno = ++st.pintando;
+    const vigente = () => turno === st.pintando;
+    st.capaModo.clearLayers(); st.capaEtq.clearLayers();
+    const info = $('#modo-info'), ley = $('#leyenda');
+    try {
+      if (st.modo === 'alertas') {
+        info.hidden = true; info.innerHTML = '';
+        ley.innerHTML = '<span><i class="dot rojo"></i>Urgente</span><span><i class="dot naranja"></i>Atención</span><span><i class="dot amarillo"></i>Seguimiento</span>';
+      } else if (st.modo === 'iconos') {
+        modoIconos(info, ley);
+      } else if (st.modo === 'riesgo') {
+        await modoRiesgo(info, ley, vigente);
+      } else if (st.modo === 'sismos') {
+        await modoSismos(info, ley, vigente);
+      } else if (st.modo === 'clima') {
+        await modoClima(info, ley, vigente);
+      }
+    } catch (e) {
+      if (!vigente()) return;
+      info.hidden = false;
+      info.innerHTML = '<div class="vacio">No se pudo cargar este modo: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  function segmentos(nombre, opciones, actual) {
+    return '<div class="seg" data-seg="' + nombre + '">' + opciones.map(o =>
+      '<button class="' + (String(o.id) === String(actual) ? 'activo' : '') + '" data-val="' + esc(o.id) + '">' + o.txt + '</button>').join('') + '</div>';
+  }
+  function enlazarSegmentos(info, fn) {
+    info.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => fn(b.parentNode.dataset.seg, b.dataset.val)));
+  }
+
+  // ---- 1. Íconos por tipo ----
+  function modoIconos(info, ley) {
+    const j = st.panel; if (!j) return;
+    const base = (j.fecha === j.hoy ? j.activos : j.dia).filter(e =>
+      (st.filtro !== 'urgentes' || e.nivel !== 'amarillo') && (!st.muni || e.municipio === st.muni));
+    const porGrupo = { todos: base.length };
+    base.forEach(e => { const g = grupoDe(e.categoria); porGrupo[g] = (porGrupo[g] || 0) + 1; });
+    const enGrupo = base.filter(e => st.grupo === 'todos' || grupoDe(e.categoria) === st.grupo);
+    const porCat = {};
+    enGrupo.forEach(e => { porCat[e.categoria] = (porCat[e.categoria] || 0) + 1; });
+    const cats = Object.keys(porCat).sort((a, b) => porCat[b] - porCat[a]);
+
+    info.hidden = false;
+    info.innerHTML = segmentos('grupo', GRUPOS.map(g => ({ id: g.id, txt: esc(g.txt) + ' <b>' + (porGrupo[g.id] || 0) + '</b>' })), st.grupo) +
+      (cats.length ? '<div class="cats">' + cats.map(c =>
+        '<button class="cat' + (st.cat === c ? ' activo' : '') + '" data-cat="' + esc(c) + '">' + icono(c) + '<span>' + esc(c) + '</span><b>' + porCat[c] + '</b></button>').join('') + '</div>'
+        : '<div class="sub" style="padding:4px 2px">Sin alertas en este grupo.</div>');
+    enlazarSegmentos(info, (_, v) => { st.grupo = v; pintarPanel(); pintarModo(); });
+    info.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
+      st.cat = st.cat === b.dataset.cat ? '' : b.dataset.cat;
+      const sel = $('#filtro-cat'); sel.value = st.cat; sel.classList.toggle('activo', !!st.cat);
+      pintarPanel(); pintarModo();
+    }));
+    ley.innerHTML = '<span><i class="dot rojo"></i>Urgente</span><span><i class="dot naranja"></i>Atención</span><span><i class="dot amarillo"></i>Seguimiento</span>';
+  }
+
+  // ---- Límites municipales ----
+  async function geoMunicipios() {
+    if (!st.geo) {
+      st.geo = fetch('data/tabasco_municipios.geojson').then(r => { if (!r.ok) throw new Error('falta data/tabasco_municipios.geojson'); return r.json(); })
+        .catch(e => { st.geo = null; throw e; });
+    }
+    return st.geo;
+  }
+
+  function pintarZonas(geo, datoDe, tooltipDe, etiquetaDe) {
+    L.geoJSON(geo, {
+      pane: 'zonas',
+      style: f => {
+        const c = datoDe(f.properties.nombre);
+        return { color: c ? c.c : '#3A4658', weight: c ? 1.4 : 1, opacity: 0.9, fillColor: c ? c.c : '#1A2230', fillOpacity: c ? 0.5 : 0.15 };
+      },
+      onEachFeature: (f, capa) => {
+        const n = f.properties.nombre;
+        capa.bindTooltip(tooltipDe(n), { sticky: true, direction: 'top' });
+        capa.on('mouseover', () => capa.setStyle({ weight: 3 }));
+        capa.on('mouseout', () => capa.setStyle({ weight: datoDe(n) ? 1.4 : 1 }));
+        capa.on('click', () => {
+          st.muni = st.muni === n ? '' : n;
+          pintarPanel(); pintarModo();
+          if (st.muni) $('.lista-caja').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    }).addTo(st.capaModo);
+    Object.keys(MUNIS).forEach(n => {
+      const t = etiquetaDe(n); if (!t) return;
+      L.marker(ETQ[n] || MUNIS[n], { pane: 'etiquetas', interactive: false, keyboard: false,
+        icon: L.divIcon({ className: '', iconSize: [0, 0], html: '<div class="etq-muni' + (st.muni === n ? ' sel' : '') + '">' + t + '</div>' }) }).addTo(st.capaEtq);
+    });
+  }
+
+  function ranking(filas, titulo) {
+    if (!filas.length) return '';
+    const max = Math.max.apply(null, filas.map(f => f.v).concat([1]));
+    return '<div class="rank"><span class="seccion-t">' + esc(titulo) + '</span>' + filas.map(f =>
+      '<div class="rank-fila"><span class="rank-n">' + esc(f.n) + '</span><span class="rank-barra"><i style="width:' + Math.max(4, f.v / max * 100) +
+      '%;background:' + f.c + '"></i></span><span class="rank-v">' + esc(f.t) + '</span></div>').join('') + '</div>';
+  }
+
+  // ---- 2. Riesgo por municipio ----
+  async function modoRiesgo(info, ley, vigente) {
+    const j = st.panel; if (!j) return;
+    const geo = await geoMunicipios(); if (!vigente()) return;
+    const esHoy = j.fecha === j.hoy;
+    const datos = {};
+    let esc7 = ESC_RIESGO;
+    if (st.riesgoVista === '7d') {
+      esc7 = ESC_RIESGO_7D;
+      (j.termometro || []).forEach(x => { datos[x.municipio] = { n: x.n, puntos: x.peso, rojos: null }; });
+    } else {
+      const peso = { rojo: 3, naranja: 2, amarillo: 1 };
+      j.dia.filter(e => e.estatus !== 'Archivada' && e.municipio).forEach(e => {
+        const d = datos[e.municipio] || (datos[e.municipio] = { n: 0, puntos: 0, rojos: 0 });
+        d.n++; d.puntos += peso[e.nivel] || 1; if (e.nivel === 'rojo') d.rojos++;
+      });
+    }
+    const colorM = n => datos[n] ? colorDe(esc7, datos[n].puntos) : null;
+    const periodo = st.riesgoVista === '7d' ? 'en 7 días' : (esHoy ? 'hoy' : 'ese día');
+    pintarZonas(geo, colorM,
+      n => { const d = datos[n]; return '<b>' + esc(n) + '</b><br>' + (d ? d.n + ' alerta' + (d.n > 1 ? 's' : '') + ' ' + periodo +
+        (d.rojos ? ' · ' + d.rojos + ' urgente' + (d.rojos > 1 ? 's' : '') : '') + '<br>Nivel: ' + colorM(n).t : 'Sin alertas ' + periodo); },
+      n => datos[n] ? esc(n) + ' <b>' + datos[n].n + '</b>' : '');
+
+    const filas = Object.keys(datos).map(n => ({ n: n, v: datos[n].puntos, c: colorM(n).c, t: datos[n].n + ' · ' + colorM(n).t }))
+      .sort((a, b) => b.v - a.v).slice(0, 6);
+    info.hidden = false;
+    info.innerHTML = segmentos('riesgo', [{ id: 'hoy', txt: esHoy ? 'Hoy' : 'Ese día' }, { id: '7d', txt: 'Últimos 7 días' }], st.riesgoVista) +
+      (filas.length ? ranking(filas, 'Municipios con más actividad') : '<div class="sub" style="padding:4px 2px">Sin alertas ' + periodo + '.</div>') +
+      '<div class="sub nota">Toca un municipio para ver solo sus alertas en la lista.</div>';
+    enlazarSegmentos(info, (_, v) => { st.riesgoVista = v; pintarModo(); });
+    ley.innerHTML = leyendaEscala(esc7);
+  }
+
+  // ---- 3. Sismos (USGS) ----
+  async function datosSismos() {
+    if (st.sismos && Date.now() - st.sismos.t < 5 * 60000) return st.sismos.lista;
+    const desde = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const url = 'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=time&limit=80&minmagnitude=3.5' +
+      '&latitude=17.95&longitude=-92.6&maxradiuskm=800&starttime=' + desde;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('servicio de sismos no disponible');
+    const j = await r.json();
+    const lista = j.features.map(f => ({
+      id: f.id, mag: f.properties.mag, lugar: traducirLugar(f.properties.place || ''), t: f.properties.time, url: f.properties.url,
+      lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], prof: Math.round(f.geometry.coordinates[2])
+    }));
+    lista.forEach(s => s.dist = km(VHSA, [s.lat, s.lon]));
+    st.sismos = { t: Date.now(), lista: lista };
+    return lista;
+  }
+  function traducirLugar(p) {
+    return p.replace(/(\d+) km ([NSEW]{1,3}) of /, (m, k, d) => k + ' km al ' + d.replace(/W/g, 'O') + ' de ')
+      .replace(/, Mexico$/, '').replace(/Guatemala$/, 'Guatemala').replace(/ region$/, ' (región)');
+  }
+  function colorSismo(t) { const h = (Date.now() - t) / 3600000; return h < 24 ? '#FF4D4F' : h < 168 ? '#FFA94D' : '#F5D04A'; }
+
+  async function modoSismos(info, ley, vigente) {
+    info.hidden = false;
+    if (!st.sismos) info.innerHTML = '<div class="cargando">Consultando sismos…</div>';
+    const [lista, geo] = await Promise.all([datosSismos(), geoMunicipios().catch(() => null)]); if (!vigente()) return;
+    if (geo) L.geoJSON(geo, { pane: 'zonas', interactive: false, style: { color: '#7FB3FF', weight: 1, opacity: 0.55, fillColor: '#7FB3FF', fillOpacity: 0.06 } }).addTo(st.capaModo);
+    if (!st.mapa._sismosVista) { st.mapa.flyToBounds(SURESTE, { duration: 0.6 }); }
+    st.mapa._sismosVista = true;
+    // círculos de mayor a menor para que los chicos queden encima
+    lista.slice().sort((a, b) => b.mag - a.mag).forEach(s => {
+      const c = colorSismo(s.t), reciente = Date.now() - s.t < 86400000;
+      const radioKm = Math.min(400, Math.pow(10, 0.43 * s.mag - 0.4));
+      L.circle([s.lat, s.lon], { pane: 'zonas', radius: radioKm * 1000, color: c, weight: 1, opacity: 0.6, fillColor: c, fillOpacity: 0.12, interactive: false }).addTo(st.capaModo);
+      L.marker([s.lat, s.lon], { zIndexOffset: reciente ? 1000 : 0, icon: L.divIcon({ className: '', iconSize: [30, 30], iconAnchor: [15, 15],
+        html: '<div class="sismo' + (reciente ? ' late' : '') + '" style="--c:' + c + '">' + s.mag.toFixed(1) + '</div>' }) })
+        .bindTooltip('<b>M ' + s.mag.toFixed(1) + '</b> · ' + esc(s.lugar) + '<br>' + esc(hace(s.t)) + ' · ' + s.prof + ' km de profundidad<br>' + s.dist + ' km de Villahermosa', { direction: 'top', offset: [0, -14] })
+        .on('click', () => window.open(s.url, '_blank', 'noopener'))
+        .addTo(st.capaModo);
+    });
+    const ult = lista[0];
+    const cerca = lista.filter(s => s.dist <= 250);
+    info.innerHTML =
+      (ult ? '<div class="sismo-ultimo" style="--c:' + colorSismo(ult.t) + '"><div class="sismo-mag">' + ult.mag.toFixed(1) + '<small>MAG</small></div><div>' +
+        '<div class="sub">Último sismo registrado · ' + esc(hace(ult.t)) + '</div><div class="tit">' + esc(ult.lugar) + '</div>' +
+        '<div class="meta">' + esc(new Date(ult.t).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })) +
+        ' · prof. ' + ult.prof + ' km · ' + ult.dist + ' km de Villahermosa</div></div></div>' : '<div class="vacio">Sin sismos de magnitud 3.5 o más en 30 días.</div>') +
+      '<div class="kpis kpis-mini"><div class="kpi"><b>' + lista.filter(s => Date.now() - s.t < 86400000).length + '</b><span>Últimas 24 h</span></div>' +
+      '<div class="kpi"><b>' + lista.length + '</b><span>30 días (M3.5+)</span></div><div class="kpi"><b>' + cerca.length + '</b><span>A menos de 250 km</span></div></div>' +
+      (lista.length > 1 ? '<div class="sismo-lista">' + lista.slice(1, 9).map(s =>
+        '<a href="' + urlSegura(s.url) + '" target="_blank" rel="noopener" class="sismo-fila"><span class="sismo-chip" style="--c:' + colorSismo(s.t) + '">' + s.mag.toFixed(1) + '</span>' +
+        '<span class="sismo-txt">' + esc(s.lugar) + '<small>' + esc(hace(s.t)) + ' · ' + s.dist + ' km de Villahermosa</small></span></a>').join('') + '</div>' : '') +
+      '<div class="sub nota">Fuente: Servicio Geológico de EE. UU. (USGS), radio de 800 km. Aparecen minutos después del sismo: <b>no es alerta temprana</b>; para eso está la alerta sísmica oficial (SASMEX).</div>';
+    ley.innerHTML = '<span><i class="dot" style="background:#FF4D4F"></i>Últimas 24 h</span><span><i class="dot" style="background:#FFA94D"></i>7 días</span><span><i class="dot" style="background:#F5D04A"></i>30 días</span>';
+  }
+
+  // ---- 4. Clima y calor (Open-Meteo) ----
+  const CLIMA_TXT = c => c === 0 ? 'Despejado' : c <= 3 ? 'Parcialmente nublado' : c <= 48 ? 'Niebla' : c <= 57 ? 'Llovizna' :
+    c <= 67 ? 'Lluvia' : c <= 77 ? 'Nieve' : c <= 82 ? 'Chubascos' : 'Tormenta eléctrica';
+  async function datosClima() {
+    if (st.clima && Date.now() - st.clima.t < 30 * 60000) return st.clima.datos;
+    const nombres = Object.keys(MUNIS);
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + nombres.map(n => MUNIS[n][0]).join(',') +
+      '&longitude=' + nombres.map(n => MUNIS[n][1]).join(',') +
+      '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code' +
+      '&daily=weather_code,temperature_2m_max,apparent_temperature_max,precipitation_sum,precipitation_probability_max' +
+      '&timezone=America%2FMexico_City&forecast_days=3';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('servicio de clima no disponible');
+    let j = await r.json(); if (!Array.isArray(j)) j = [j];
+    const datos = {};
+    nombres.forEach((n, i) => { datos[n] = j[i]; });
+    st.clima = { t: Date.now(), datos: datos };
+    return datos;
+  }
+
+  async function modoClima(info, ley, vigente) {
+    info.hidden = false;
+    if (!st.clima) info.innerHTML = '<div class="cargando">Consultando el clima…</div>';
+    const [geo, datos] = await Promise.all([geoMunicipios(), datosClima()]); if (!vigente()) return;
+    const d = st.climaDia, calor = st.climaVar === 'calor';
+    const valor = n => { const x = datos[n] && datos[n].daily; if (!x) return null;
+      return calor ? x.apparent_temperature_max[d] : x.precipitation_sum[d]; };
+    const escala = calor ? ESC_CALOR : ESC_LLUVIA;
+    const colorM = n => { const v = valor(n); return v == null ? null : colorDe(escala, Math.round(v)); };
+    const fmtV = v => calor ? Math.round(v) + '°' : Math.round(v) + ' mm';
+    pintarZonas(geo, colorM,
+      n => { const x = datos[n] && datos[n].daily; if (!x) return esc(n);
+        return '<b>' + esc(n) + '</b> · ' + esc(CLIMA_TXT(x.weather_code[d])) + '<br>Máx. ' + Math.round(x.temperature_2m_max[d]) + '° · se siente ' +
+          Math.round(x.apparent_temperature_max[d]) + '°<br>Lluvia ' + Math.round(x.precipitation_sum[d]) + ' mm · probabilidad ' + (x.precipitation_probability_max[d] || 0) + '%'; },
+      n => { const v = valor(n); return v == null || (!calor && v < 1) ? '' : esc(fmtV(v)); });
+
+    const filas = Object.keys(datos).filter(n => valor(n) != null && (calor || valor(n) >= 1))
+      .map(n => ({ n: n, v: valor(n), c: colorM(n) ? colorM(n).c : '#3A4658', t: fmtV(valor(n)) }))
+      .sort((a, b) => b.v - a.v).slice(0, 6);
+    const c = datos['Centro'] && datos['Centro'].current;
+    const dias = [0, 1, 2].map(i => {
+      const f = datos['Centro'] && datos['Centro'].daily.time[i];
+      const nom = i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'long' });
+      return { id: i, txt: esc(nom.charAt(0).toUpperCase() + nom.slice(1)) };
+    });
+    info.innerHTML =
+      (c ? '<div class="clima-ahora"><div class="clima-t">' + Math.round(c.temperature_2m) + '°</div><div><div class="sub">Ahora en Villahermosa</div>' +
+        '<div class="tit">' + esc(CLIMA_TXT(c.weather_code)) + ' · se siente ' + Math.round(c.apparent_temperature) + '°</div>' +
+        '<div class="meta">Humedad ' + c.relative_humidity_2m + '%' + (c.precipitation ? ' · lloviendo ' + c.precipitation + ' mm' : '') + '</div></div></div>' : '') +
+      '<div class="seg-fila">' + segmentos('var', [{ id: 'calor', txt: 'Calor' }, { id: 'lluvia', txt: 'Lluvia' }], st.climaVar) +
+      segmentos('dia', dias, d) + '</div>' +
+      (filas.length ? ranking(filas, calor ? 'Sensación térmica máxima' : 'Lluvia acumulada esperada') :
+        '<div class="sub" style="padding:4px 2px">Sin lluvia importante esperada.</div>') +
+      '<div class="sub nota">Pronóstico de Open-Meteo por cabecera municipal; se actualiza cada 30 min. Para avisos oficiales consulta Conagua / SMN.</div>';
+    enlazarSegmentos(info, (seg, v) => { if (seg === 'var') st.climaVar = v; else st.climaDia = Number(v); pintarModo(); });
+    ley.innerHTML = leyendaEscala(escala, '<span>' + (calor ? 'Se siente' : 'Lluvia') + '</span>');
   }
 
   // ---------------- DETALLE ----------------

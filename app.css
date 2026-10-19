@@ -105,6 +105,7 @@ select.chip{appearance:none;-webkit-appearance:none;padding-right:12px;backgroun
 .pin.late::after{animation-delay:.8s}
 .pin.apagado{opacity:.75}
 .leaflet-container{background:#0E141C;font-family:inherit}
+.leaflet-pane>svg{width:auto;height:auto;stroke:none;fill:none}
 .mapa-base{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
 .leaflet-control-attribution{background:rgba(11,15,20,.7)!important;color:#7d8794!important;font-size:9px!important}
 .leaflet-control-attribution a{color:#9fb3c8!important}
@@ -241,3 +242,81 @@ details summary{cursor:pointer;font-size:12.5px;color:var(--azul)}
 @keyframes gira{to{transform:rotate(360deg)}}
 @keyframes cinta{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+
+/* ===== Modos del mapa ===== */
+.modos{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:2px 8px 10px}
+.modos::-webkit-scrollbar{display:none}
+.modos button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:52px;padding:0 2px;border-radius:12px;border:1px solid var(--borde);background:var(--panel);color:var(--suave);font-size:11.5px;cursor:pointer;white-space:nowrap;min-width:0}
+.modos button svg{width:18px;height:18px}
+@media (min-width:700px){.modos button{flex-direction:row;height:40px;gap:6px;font-size:13px}}
+.modos button.activo{background:#13233A;border-color:#2B4A78;color:#CFE1FF;font-weight:600}
+.leyenda{max-width:calc(100% - 20px)}
+.leyenda span:first-child:not(:has(i)){background:transparent;border-color:transparent;padding-left:0;color:var(--suave)}
+
+/* Íconos por tipo (pin con flecha) */
+.ico-pin{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;border:2px solid #0B0F14;box-shadow:0 3px 8px rgba(0,0,0,.55);position:relative}
+.ico-pin::after{content:'';position:absolute;left:50%;bottom:-9px;margin-left:-6px;border:6px solid transparent;border-top-color:inherit}
+.ico-pin svg{width:18px;height:18px;stroke:#0B0F14;stroke-width:2.2}
+.ico-pin.rojo{background:var(--rojo);border-top-color:#0B0F14} .ico-pin.rojo::after{border-top-color:var(--rojo)}
+.ico-pin.naranja{background:var(--naranja)} .ico-pin.naranja::after{border-top-color:var(--naranja)}
+.ico-pin.amarillo{background:var(--amarillo)} .ico-pin.amarillo::after{border-top-color:var(--amarillo)}
+.ico-pin.apagado{opacity:.7}
+.ico-pin.late{animation:latidoCaja 1.6s ease-out infinite}
+@keyframes latidoCaja{0%{box-shadow:0 0 0 0 rgba(255,77,79,.75),0 3px 8px rgba(0,0,0,.55)}70%{box-shadow:0 0 0 14px rgba(255,77,79,0),0 3px 8px rgba(0,0,0,.55)}100%{box-shadow:0 0 0 0 rgba(255,77,79,0),0 3px 8px rgba(0,0,0,.55)}}
+
+/* Panel bajo el mapa */
+.modo-info{margin:10px 8px 0;padding:12px;border-radius:16px;background:var(--panel);border:1px solid var(--borde);display:flex;flex-direction:column;gap:12px}
+.modo-info .cargando{padding:14px 0}
+.modo-info .nota{font-size:11.5px;line-height:1.4;color:var(--tenue)}
+.seg{display:flex;background:var(--fondo);border:1px solid var(--borde);border-radius:11px;padding:3px;gap:2px;overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{flex:1 0 auto;height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--suave);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.seg button b{font-family:var(--mono);font-weight:600;margin-left:4px;color:var(--tenue)}
+.seg button.activo{background:var(--panel2);color:var(--texto);font-weight:600;box-shadow:0 0 0 1px var(--borde2)}
+.seg button.activo b{color:var(--texto2)}
+.seg-fila{display:flex;flex-direction:column;gap:6px}
+.cats{display:flex;flex-wrap:wrap;gap:6px}
+.cat{display:flex;align-items:center;gap:6px;height:34px;padding:0 10px 0 6px;border-radius:10px;border:1px solid var(--borde);background:var(--panel2);color:var(--texto2);font-size:12px;cursor:pointer}
+.cat svg{width:22px;height:22px;padding:3px;border-radius:6px;background:#0B0F14;color:var(--texto)}
+.cat b{font-family:var(--mono);color:var(--texto)}
+.cat.activo{background:var(--texto);color:var(--fondo);border-color:var(--texto)} .cat.activo b{color:var(--fondo)}
+
+/* Etiquetas de municipio */
+.etq-muni{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:10.5px;font-weight:600;color:#fff;text-shadow:0 0 3px #000,0 0 6px #000,0 1px 2px #000;letter-spacing:.2px}
+.etq-muni b{font-family:var(--mono);margin-left:2px}
+.etq-muni.sel{font-size:12px;text-decoration:underline}
+
+/* Ranking */
+.rank{display:flex;flex-direction:column;gap:7px}
+.rank-fila{display:grid;grid-template-columns:minmax(90px,1.1fr) 2fr auto;align-items:center;gap:8px;font-size:12.5px}
+.rank-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--texto2)}
+.rank-barra{height:8px;border-radius:4px;background:var(--fondo);overflow:hidden}
+.rank-barra i{display:block;height:100%;border-radius:4px}
+.rank-v{font-family:var(--mono);font-size:11.5px;color:var(--texto);white-space:nowrap}
+
+/* Sismos */
+.sismo{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--c);color:#0B0F14;font:600 10.5px var(--mono);border:2px solid #0B0F14;box-shadow:0 2px 6px rgba(0,0,0,.5);cursor:pointer}
+.sismo.late{animation:latidoSismo 1.6s ease-out infinite}
+@keyframes latidoSismo{0%{box-shadow:0 0 0 0 var(--c)}100%{box-shadow:0 0 0 16px transparent}}
+.sismo-ultimo{display:flex;gap:12px;align-items:center;padding:10px;border-radius:12px;background:var(--panel2);border-left:4px solid var(--c)}
+.sismo-ultimo .tit{font-size:14px;font-weight:600;margin:2px 0}
+.sismo-mag{min-width:62px;height:62px;border-radius:12px;background:var(--c);color:#0B0F14;display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 24px/1 var(--mono)}
+.sismo-mag small{font-size:9px;letter-spacing:1px;margin-top:3px}
+.kpis-mini{margin:0}
+.kpis-mini .kpi{background:var(--panel2);border-color:var(--borde)}
+.kpis-mini .kpi b{font-size:20px}
+.sismo-lista{display:flex;flex-direction:column;gap:2px}
+.sismo-fila{display:flex;align-items:center;gap:10px;padding:7px 4px;border-radius:8px;text-decoration:none;color:var(--texto2);font-size:12.5px}
+.sismo-fila:active{background:var(--panel2)}
+.sismo-chip{min-width:38px;text-align:center;padding:3px 0;border-radius:7px;background:var(--c);color:#0B0F14;font:600 12px var(--mono)}
+.sismo-txt{display:flex;flex-direction:column;min-width:0}
+.sismo-txt small{font-family:var(--mono);font-size:10.5px;color:var(--tenue)}
+
+/* Clima */
+.clima-ahora{display:flex;gap:12px;align-items:center}
+.clima-ahora .tit{font-size:14px;font-weight:600;margin:2px 0}
+.clima-t{font:600 38px/1 var(--mono);color:var(--naranja)}
+
+@media (min-width:900px){
+  .seg-fila{flex-direction:row}
+}
